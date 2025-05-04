@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <netdb.h> 
 #include <pthread.h>
+#include <arpa/inet.h>
 
 #define PORT_NUM 1004
 
