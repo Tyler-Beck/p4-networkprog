@@ -20,18 +20,20 @@ void error(const char *msg){
 }
 
 void* thread_recv(void* args){
+    pthread_detach(pthread_self());
+
     int sockfd = ((thread_args*) args)->clisockfd;
     free(args);
 
-    char buffer[256];
+    char buffer[512];
     int n;
 
-    n = recv(sockfd, buffer, 256, 0);
+    n = recv(sockfd, buffer, 512, 0);
     while(n>0) {
-        memset(buffer, 0, 256);
-        n = recv(sockfd, buffer, 255, 0);
+        memset(buffer, 0, 512);
+        n = recv(sockfd, buffer, 512, 0);
         if(n<0) error("ERROR: reading from socket");
-        printf("%s\n", buffer);
+        printf("\n%s\n", buffer);
     }
     return NULL;
 }
