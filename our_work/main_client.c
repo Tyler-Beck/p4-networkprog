@@ -9,7 +9,7 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 
-#define PORT_NUM 1004
+#define PORT_NUM 10044
 
 typedef struct _thread_args {
     int clisockfd;
@@ -31,10 +31,10 @@ void* thread_recv(void* args){
 
     n = recv(sockfd, buffer, 512, 0);
     while(n>0) {
+        printf("%s\n", buffer);
         memset(buffer, 0, 512);
         n = recv(sockfd, buffer, 512, 0);
         if(n<0) error("ERROR: reading from socket");
-        printf("\n%s\n", buffer);
     }
     return NULL;
 }
@@ -52,8 +52,8 @@ void* thread_send(void* args){
         memset(buffer, 0, 256);
         fgets(buffer, 255, stdin);
 
-        // Handle empty message
-        if(strlen(buffer)==1) buffer[0] = '\0';
+        // Get rid of newline charatcter
+        buffer[strlen(buffer)-1] = '\0';
 
         n = send(sockfd, buffer, strlen(buffer), 0);
         if(n < 0) error("ERROR writing to socket");

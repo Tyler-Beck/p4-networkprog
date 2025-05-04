@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 
-#define PORT_NUM 1004
+#define PORT_NUM 10044
 /*
 void add_client();
 void remove_client();
@@ -181,6 +181,7 @@ void* thread_main(void* args)
 	char buffer[256];
 	int nsen, nrcv;
 
+	memset(buffer, 0, 256);
 	nrcv = recv(clisockfd, buffer, 255, 0);
 	if (nrcv < 0) error("ERROR recv() failed");
 
@@ -188,6 +189,7 @@ void* thread_main(void* args)
 		// we send the message to everyone except the sender
 		broadcast(clisockfd, buffer);
 
+		memset(buffer, 0, 256);
 		nrcv = recv(clisockfd, buffer, 255, 0);
 		if (nrcv < 0) error("ERROR recv() failed");
 	}
