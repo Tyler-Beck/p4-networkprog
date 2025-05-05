@@ -30,11 +30,13 @@ void* thread_recv(void* args){
     int n;
 
     n = recv(sockfd, buffer, 512, 0);
+    buffer[n] = '\0';
     while(n>0) {
         printf("%s\n", buffer);
         memset(buffer, 0, 512);
         n = recv(sockfd, buffer, 512, 0);
         if(n<0) error("ERROR: reading from socket");
+        buffer[n] = '\0';
     }
     return NULL;
 }
@@ -72,7 +74,8 @@ int main(int argc, char *argv[]){
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd < 0)  error("ERROR opening socket");
     
-    // Get user's name and get rid of new line character
+    // Get user's name and get rid of new line character; set first bit to '1' to show it is a name
+    memset(name, 0, 50);
     printf("Type your user name: ");
     fgets(name, 50, stdin);
     name[strlen(name)-1] = '\0';
