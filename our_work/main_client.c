@@ -66,7 +66,7 @@ void* thread_send(void* args){
 int main(int argc, char *argv[]){
     char name[50];
     
-    if (argc < 2) error("Please speicify hostname");
+    if (argc < 2) error("Please specify hostname");
 
     // Client socket
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);

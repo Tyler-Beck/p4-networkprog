@@ -127,13 +127,13 @@ void add_tail(int newclisockfd, char* name)
 	if (head == NULL) {
 		head = (USR*) malloc(sizeof(USR));
 		head->clisockfd = newclisockfd;
-		head->name = name;
+		memcpy(head->name, name, strlen(name));
 		head->next = NULL;
 		tail = head;
 	} else {
 		tail->next = (USR*) malloc(sizeof(USR));
 		tail->next->clisockfd = newclisockfd;
-		tail->next->name = name;
+		memcpy(tail->next->name, name, strlen(name));
 		tail->next->next = NULL;
 		tail = tail->next;
 	}
@@ -148,11 +148,12 @@ void broadcast(int fromfd, char* message)
 
 	// Get name of sender
 	char name[50];
+	memset(name, 0, 50);
 
 	USR* cur = head;
 	while(cur != NULL) {
 		if(cur->clisockfd == fromfd) {
-			memcpy(name, cur->name, 50);
+			memcpy(name, cur->name, strlen(cur->name));
 			break;
 		}
 	}
@@ -165,6 +166,7 @@ void broadcast(int fromfd, char* message)
 			char buffer[512];
 
 			// prepare message
+			memset(buffer, 0, 512);
 			sprintf(buffer, "[%s (%s)]:%s", name, inet_ntoa(cliaddr.sin_addr), message);
 			int nmsg = strlen(buffer);
 
@@ -242,6 +244,7 @@ int main(int argc, char *argv[])
 
 		// Get name and map in node
 		char name[50];
+		memset(name, 0, 50);
 		int n = recv(newsockfd, name, 50, 0);
 		if(n < 0) error("ERROR recv()ing name");
 
