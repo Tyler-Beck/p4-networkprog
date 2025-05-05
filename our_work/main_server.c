@@ -7,104 +7,24 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <time.h>
 
 #define PORT_NUM 10044
-/*
-void add_client();
-void remove_client();
-void display_clients();
-void broadcast_msg();
-void notification();
-void assign_color();
 
-typedef struct client_info{
-	int sockfd;
-	char username[20];
-	char ip_addr[20];
-	struct client_info* next; // pointer to the next client
-} Client;
+#define MAX_COLORS 8
+const char* colors[MAX_COLORS] = {
+	"\033[31m", // Red
+	"\033[32m", // Green
+	"\033[33m", // Yellow
+	"\033[34m", // Blue
+	"\033[35m", // Magenta
+	"\033[36m", // Cyan
+	"\033[1;31m", // Bright red
+	"\033[1;32m", // bright green
+};
 
-Client* head = NULL; // head of the linked list
-Client* tail = NULL; // tail of the linked list
-int num_clients = 0; // connected clients
+const char* reset_color = "\033[0m";
 
-
-void add_client(int newclisockfd, struct sockaddr_in* cli_addr, char* username){
-	// Add a new client
-	Client* new_client = (Client*)malloc(sizeof(Client));
-	new_client->sockfd = newclisockfd;
-	strncpy(new_client->username, username, sizeof(new_client->username));
-	strncpy(new_client->ip_addr, ip_addr, sizeof(new_client->ip_addr));
-	new_client->next = NULL;
-
-	if(head == NULL){
-		head = new_client;
-		tail = head;
-	} else {
-		tail->next = new_client;
-		tail = new_client;
-	}
-
-	num_clients++;
-}
-
-void remove_client(int sockfd){
-	Client* temp = head;
-	Client* prev = NULL;
-
-	while(temp != NULL){
-		if(temp->sockfd == sockfd){
-			if(prev == NULL){
-				head = temp->next;
-			} else {
-				prev->next = temp->next;
-			}
-		}
-	}
-
-	if(temp == NULL){
-		printf("Client not found\n");
-	} else if(temp == tail){
-		tail = prev;
-	} else {
-		prev->next = temp->next;
-	}
-
-	// notify clients that a client has left
-	char msg[50];
-	sprintf(msg, "%s has left the chat\n", temp->username);
-	broadcast_msg(msg, sockfd);
-
-	free(temp);
-	num_clients--;
-}
-
-void display_clients(){
-	Client* temp = head;
-	while(temp != NULL){
-		printf("Client: %s, IP: %s\n", temp->username, temp->ip_addr);
-		temp = temp->next;
-	}
-}
-
-void broadcast_msg(char* msg, int sockfd){
-	Client* temp = head;
-	while(temp != NULL){
-		if(temp->sockfd != sockfd){
-			send(temp->sockfd, msg, strlen(msg), 0);
-		}
-		temp = temp->next;
-	}
-}
-
-void notification(char* msg){
-	Client* temp = head;
-	while(temp != NULL){
-		send(temp->sockfd, msg, strlen(msg), 0);
-		temp = temp->next;
-	}
-}
-*/
 
 void error(const char *msg)
 {
@@ -114,7 +34,8 @@ void error(const char *msg)
 
 typedef struct _USR {
 	int clisockfd;		// socket file descriptor
-	char name[50];		// name of client
+	char name[50];	// name of client
+	int color_index;		// color index of client
 	struct _USR* next;	// for linked list queue
 } USR;
 
@@ -137,11 +58,39 @@ void print_list() {
 
 void add_tail(int newclisockfd, char* name)
 {
+
+	// static array to track used colors
+	static int used_colors[MAX_COLORS] = {0};
+	int colors_avail[MAX_COLORS];
+	int num_avail = 0;
+	int color_index;
+
+	// Figure out what colors are available
+	for(int i = 0; i < MAX_COLORS; i++){
+		if(used_colors[i] == 0){
+			colors_avail[num_avail++] = i;
+		}
+	}
+
+	// if all the colors get taken, reset and start again
+	if(num_avail == 0){
+		for(int i = 0; i < MAX_COLORS; i++){
+			used_colors[i] = 0;
+			colors_avail[num_avail++] = i;
+		}
+	}
+
+	// pick a random color and tag it as used
+	color_index = colors_avail[rand() % num_avail];
+	used_colors[color_index] = 1;
+
+
 	if (head == NULL) {
 		head = (USR*) malloc(sizeof(USR));
 		head->clisockfd = newclisockfd;
 		memcpy(head->name, name, strlen(name));
 		head->name[strlen(name)] = '\0';
+		head->color_index = color_index; // assiging color here
 		head->next = NULL;
 		tail = head;
 	} else {
@@ -149,6 +98,7 @@ void add_tail(int newclisockfd, char* name)
 		tail->next->clisockfd = newclisockfd;
 		memcpy(tail->next->name, name, strlen(name));
 		tail->next->name[strlen(name)] = '\0';
+		tail->next->color_index = color_index; // assigning color here
 		tail->next->next = NULL;
 		tail = tail->next;
 	}
@@ -161,14 +111,16 @@ void broadcast(int fromfd, char* message, int option)
 	socklen_t clen = sizeof(cliaddr);
 	if (getpeername(fromfd, (struct sockaddr*)&cliaddr, &clen) < 0) error("ERROR Unknown sender!");
 
-	// Get name of sender
+	// Get name of sender (and color)
 	char name[50];
 	memset(name, 0, 50);
+	int sender_color_index = 0;
 
 	USR* cur = head;
 	while(cur != NULL) {
 		if(cur->clisockfd == fromfd) {
 			memcpy(name, cur->name, strlen(cur->name));
+			sender_color_index = cur->color_index; // sender color
 			break;
 		}
 		cur = cur->next;
@@ -196,8 +148,15 @@ void broadcast(int fromfd, char* message, int option)
 			// prepare message
 			memset(buffer, 0, 512);
 
-			if(option==1) /* Disconnection */ sprintf(buffer, "%s (%s) left the room!", name, inet_ntoa(cliaddr.sin_addr));
-			else /* Normal message */ sprintf(buffer, "[%s (%s)] %s", name, inet_ntoa(cliaddr.sin_addr), message);
+			if(option==1) { /* Disconnection */ 
+				sprintf(buffer, "%s (%s) left the room!", name, inet_ntoa(cliaddr.sin_addr));
+			} else { /* Normal message */ 
+				char colored_prefix[256];
+				sprintf(colored_prefix, "%s[%s (%s)]%s", colors[sender_color_index], name, inet_ntoa(cliaddr.sin_addr), reset_color);
+				strcat(buffer, colored_prefix);
+				strcat(buffer, " ");
+				strcat(buffer, message);
+			}
 
 			int nmsg = strlen(buffer);
 
@@ -289,6 +248,7 @@ int main(int argc, char *argv[])
 	serv_addr.sin_addr.s_addr = INADDR_ANY;	
 	//serv_addr.sin_addr.s_addr = inet_addr("192.168.1.171");	
 	serv_addr.sin_port = htons(PORT_NUM);
+	srand(time(NULL));
 
 	int status = bind(sockfd, 
 			(struct sockaddr*) &serv_addr, slen);
