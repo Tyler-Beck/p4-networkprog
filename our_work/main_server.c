@@ -115,22 +115,25 @@ void error(const char *msg)
 
 typedef struct _USR {
 	int clisockfd;		// socket file descriptor
+	char* name;			// name of client
 	struct _USR* next;	// for linked list queue
 } USR;
 
 USR *head = NULL;
 USR *tail = NULL;
 
-void add_tail(int newclisockfd)
+void add_tail(int newclisockfd, char* name)
 {
 	if (head == NULL) {
 		head = (USR*) malloc(sizeof(USR));
 		head->clisockfd = newclisockfd;
+		head->name = name;
 		head->next = NULL;
 		tail = head;
 	} else {
 		tail->next = (USR*) malloc(sizeof(USR));
 		tail->next->clisockfd = newclisockfd;
+		tail->next->name = name;
 		tail->next->next = NULL;
 		tail = tail->next;
 	}
@@ -143,15 +146,26 @@ void broadcast(int fromfd, char* message)
 	socklen_t clen = sizeof(cliaddr);
 	if (getpeername(fromfd, (struct sockaddr*)&cliaddr, &clen) < 0) error("ERROR Unknown sender!");
 
-	// traverse through all connected clients
+	// Get name of sender
+	char name[50];
+
 	USR* cur = head;
+	while(cur != NULL) {
+		if(cur->clisockfd == fromfd) {
+			memcpy(name, cur->name, 50);
+			break;
+		}
+	}
+
+	// traverse through all connected clients
+	cur = head;
 	while (cur != NULL) {
 		// check if cur is not the one who sent the message
 		if (cur->clisockfd != fromfd) {
 			char buffer[512];
 
 			// prepare message
-			sprintf(buffer, "[%s]:%s", inet_ntoa(cliaddr.sin_addr), message);
+			sprintf(buffer, "[%s (%s)]:%s", name, inet_ntoa(cliaddr.sin_addr), message);
 			int nmsg = strlen(buffer);
 
 			// send!
@@ -226,8 +240,14 @@ int main(int argc, char *argv[])
 			(struct sockaddr *) &cli_addr, &clen);
 		if (newsockfd < 0) error("ERROR on accept");
 
-		printf("Connected: %s\n", inet_ntoa(cli_addr.sin_addr));
-		add_tail(newsockfd); // add this new client to the client list
+		// Get name and map in node
+		char name[50];
+		int n = recv(newsockfd, name, 50, 0);
+		if(n < 0) error("ERROR recv()ing name");
+
+		printf("Connected: %s (%s)\n", name, inet_ntoa(cli_addr.sin_addr));
+
+		add_tail(newsockfd, name); // add this new client to the client list
 
 		// prepare ThreadArgs structure to pass client socket
 		ThreadArgs* args = (ThreadArgs*) malloc(sizeof(ThreadArgs));

@@ -90,6 +90,10 @@ int main(int argc, char *argv[]){
 			(struct sockaddr *) &serv_addr, slen);
 	if (status < 0) error("ERROR connecting");
 
+    // Send name to server for mapping
+    int n = send(sockfd, name, strlen(name), 0);
+    if(n < 0) error("ERROR send()ing name");
+
     pthread_t tid1;
 	pthread_t tid2;
 
