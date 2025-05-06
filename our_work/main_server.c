@@ -152,10 +152,10 @@ void broadcast(int fromfd, char* message, int option)
 				sprintf(buffer, "%s (%s) left the room!", name, inet_ntoa(cliaddr.sin_addr));
 			} else { /* Normal message */ 
 				char colored_prefix[256];
-				sprintf(colored_prefix, "%s[%s (%s)]%s", colors[sender_color_index], name, inet_ntoa(cliaddr.sin_addr), reset_color);
+				sprintf(colored_prefix, "%s[%s (%s)] %s%s", colors[sender_color_index], name, inet_ntoa(cliaddr.sin_addr), message, reset_color);
 				strcat(buffer, colored_prefix);
-				strcat(buffer, " ");
-				strcat(buffer, message);
+				//strcat(buffer, " ");
+				//strcat(buffer, message);
 			}
 
 			int nmsg = strlen(buffer);
