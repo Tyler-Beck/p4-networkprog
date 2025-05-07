@@ -25,6 +25,7 @@ const char* colors[MAX_COLORS] = {
 
 const char* reset_color = "\033[0m";
 
+int rooms[10]; // Tracks which room is currently the last used
 
 void error(const char *msg)
 {
@@ -34,9 +35,10 @@ void error(const char *msg)
 
 typedef struct _USR {
 	int clisockfd;		// socket file descriptor
-	char name[50];	// name of client
-	int color_index;		// color index of client
+	char name[50];		// name of client
+	int color_index;	// color index of client
 	struct _USR* next;	// for linked list queue
+	int room;			// room client is in
 } USR;
 
 USR *head = NULL;
@@ -56,7 +58,7 @@ void print_list() {
 	}
 }
 
-void add_tail(int newclisockfd, char* name)
+void add_tail(int newclisockfd, char* name, int room)
 {
 
 	// static array to track used colors
@@ -84,13 +86,13 @@ void add_tail(int newclisockfd, char* name)
 	color_index = colors_avail[rand() % num_avail];
 	used_colors[color_index] = 1;
 
-
 	if (head == NULL) {
 		head = (USR*) malloc(sizeof(USR));
 		head->clisockfd = newclisockfd;
 		memcpy(head->name, name, strlen(name));
 		head->name[strlen(name)] = '\0';
 		head->color_index = color_index; // assiging color here
+		head->room = room;
 		head->next = NULL;
 		tail = head;
 	} else {
@@ -99,12 +101,13 @@ void add_tail(int newclisockfd, char* name)
 		memcpy(tail->next->name, name, strlen(name));
 		tail->next->name[strlen(name)] = '\0';
 		tail->next->color_index = color_index; // assigning color here
+		tail->next->room = room;
 		tail->next->next = NULL;
 		tail = tail->next;
 	}
 }
 
-void broadcast(int fromfd, char* message, int option)
+void broadcast(int fromfd, char* message, int option, int room)
 {
 	// figure out sender address
 	struct sockaddr_in cliaddr;
@@ -129,11 +132,11 @@ void broadcast(int fromfd, char* message, int option)
 	// traverse through all connected clients
 	cur = head;
 	while (cur != NULL) {
-		// Connection, send to everyone
-		if(option==2) {
+		// Connection, send to everyone in the same room
+		if(option==2 && cur->room == room) {
 			char buffer[256];
 			memset(buffer, 0, 256);
-			sprintf(buffer, "%s (%s) joined the room!", name, inet_ntoa(cliaddr.sin_addr));
+			sprintf(buffer, "%s (%s) joined room %d!", name, inet_ntoa(cliaddr.sin_addr), room);
 
 			int nmsg = strlen(buffer);
 
@@ -141,15 +144,15 @@ void broadcast(int fromfd, char* message, int option)
 			int nsen = send(cur->clisockfd, buffer, nmsg, 0);
 			if(nsen != nmsg) error("ERROR send() failed");
 		}
-		// check if cur is not the one who sent the message
-		else if (cur->clisockfd != fromfd) {
+		// check if cur is not the one who sent the message and that current is in the same room
+		else if (cur->clisockfd != fromfd && cur->room == room) {
 			char buffer[512];
 
 			// prepare message
 			memset(buffer, 0, 512);
 
 			if(option==1) { /* Disconnection */ 
-				sprintf(buffer, "%s (%s) left the room!", name, inet_ntoa(cliaddr.sin_addr));
+				sprintf(buffer, "%s (%s) left room %d!", name, inet_ntoa(cliaddr.sin_addr), room);
 			} else { /* Normal message */ 
 				char colored_prefix[256];
 				sprintf(colored_prefix, "%s[%s (%s)] %s%s", colors[sender_color_index], name, inet_ntoa(cliaddr.sin_addr), message, reset_color);
@@ -169,6 +172,7 @@ void broadcast(int fromfd, char* message, int option)
 
 typedef struct _ThreadArgs {
 	int clisockfd;
+	int room;
 } ThreadArgs;
 
 void* thread_main(void* args)
@@ -178,6 +182,7 @@ void* thread_main(void* args)
 
 	// get socket descriptor from argument
 	int clisockfd = ((ThreadArgs*) args)->clisockfd;
+	int room = ((ThreadArgs*) args)->room;
 	free(args);
 
 	//-------------------------------
@@ -193,7 +198,7 @@ void* thread_main(void* args)
 
 	while (nrcv > 0) {
 		// we send the message to everyone except the sender
-		broadcast(clisockfd, buffer, 0);
+		broadcast(clisockfd, buffer, 0, room);
 
 		memset(buffer, 0, 256);
 		nrcv = recv(clisockfd, buffer, 255, 0);
@@ -202,7 +207,7 @@ void* thread_main(void* args)
 	}
 
 	// Handle disconnect (broadcast leaving, remove node from linked list)
-	broadcast(clisockfd, NULL, 1);
+	broadcast(clisockfd, NULL, 1, room);
 
 	USR* cur = head;
 	if(cur->clisockfd == clisockfd) {
@@ -230,6 +235,7 @@ void* thread_main(void* args)
 	print_list(); // Print all connected clients
 	close(clisockfd);
 	//-------------------------------
+	rooms[room-1]--;
 
 	return NULL;
 }
@@ -261,15 +267,56 @@ int main(int argc, char *argv[])
 			(struct sockaddr *) &cli_addr, &clen);
 		if (newsockfd < 0) error("ERROR on accept");
 
-		// Get name and map in node
-		char name[50];
+		// Get name
+		char name[51];
 		memset(name, 0, 50);
 		int n = recv(newsockfd, name, 50, 0);
 		if(n < 0) error("ERROR recv()ing name");
 		name[n] = '\0';
 
-		add_tail(newsockfd, name); // add this new client to the client list
-		broadcast(newsockfd, NULL, 2);
+		// Get room and place client into it
+		char in_room[6];
+		memset(in_room, 0, 5);
+		n = recv(newsockfd, in_room, 5, 0);
+		if(n < 0) error("ERROR recv()ing room");
+		in_room[n] = '\0';
+
+		int room;
+		if(strcmp(in_room, "new") == 0) {
+			int i;
+			for(i=0; i<10; i++) {
+				if(rooms[i] == 0)
+					break;
+			}
+
+			// If all rooms are taken, communicate that to the client
+			
+			rooms[i]++;		// Indicate a client joined the room
+			room = ++i;		// Puts client in next room
+		}
+		else {
+			room = atoi(in_room);
+
+			// If invalid room, send error message and close socket
+			char valid_room;
+			if(room > 10 || room < 1 || rooms[room-1] == 0) {
+				valid_room = 'i';
+				int n = send(newsockfd, &valid_room, 1, 0);
+				if(n < 0) error("ERROR send()ing room validity");
+
+				close(newsockfd);
+				continue;
+			}
+			else {
+				valid_room = 'v';
+				int n = send(newsockfd, &valid_room, 1, 0);
+				if(n < 0) error("ERROR send()ing room validity");
+			}
+			rooms[room-1]++;
+		}
+
+		add_tail(newsockfd, name, room); // add this new client to the client list
+		broadcast(newsockfd, NULL, 2, room);
 		print_list(); // print all connected clients
 
 		// prepare ThreadArgs structure to pass client socket
@@ -277,6 +324,7 @@ int main(int argc, char *argv[])
 		if (args == NULL) error("ERROR creating thread argument");
 		
 		args->clisockfd = newsockfd;
+		args->room = room;
 
 		pthread_t tid;
 		if (pthread_create(&tid, NULL, thread_main, (void*) args) != 0) error("ERROR creating a new thread");

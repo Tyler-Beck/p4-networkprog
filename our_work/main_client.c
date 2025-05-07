@@ -67,18 +67,24 @@ void* thread_send(void* args){
 
 int main(int argc, char *argv[]){
     char name[50];
+    char room[5];
     
-    if (argc < 2) error("Please specify hostname");
+    if (argc < 3) error("Please specify hostname and room");
 
     // Client socket
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd < 0)  error("ERROR opening socket");
     
-    // Get user's name and get rid of new line character; set first bit to '1' to show it is a name
+    // Get user's name and get rid of new line character
     memset(name, 0, 50);
     printf("Type your user name: ");
     fgets(name, 50, stdin);
     name[strlen(name)-1] = '\0';
+
+    // Set room
+    memset(room, 0, 5);
+    memcpy(room, argv[2], strlen(argv[2]));
+    room[strlen(argv[2])] = '\0';
 
     // Set up server address structure
     struct sockaddr_in serv_addr;
@@ -94,8 +100,18 @@ int main(int argc, char *argv[]){
 	if (status < 0) error("ERROR connecting");
 
     // Send name to server for mapping
-    int n = send(sockfd, name, strlen(name), 0);
+    int n = send(sockfd, name, 50, 0);
     if(n < 0) error("ERROR send()ing name");
+
+    // Send room to server
+    n = send(sockfd, room, 5, 0);
+    if(n < 0) error("ERROR send()ing room");
+
+    // If room not valid, error and exit
+    char valid_msg;
+    n = recv(sockfd, &valid_msg, 1, 0);
+    if(n < 0) error("ERROR recv()ing room validity");
+    if(valid_msg == 'i') error("ERROR: room does not exist or not open");
 
     pthread_t tid1;
 	pthread_t tid2;
