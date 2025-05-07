@@ -69,22 +69,26 @@ int main(int argc, char *argv[]){
     char name[50];
     char room[5];
     
-    if (argc < 3) error("Please specify hostname and room");
+    if (argc < 2) error("Please specify hostname");
 
     // Client socket
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd < 0)  error("ERROR opening socket");
-    
+
     // Get user's name and get rid of new line character
     memset(name, 0, 50);
     printf("Type your user name: ");
     fgets(name, 50, stdin);
     name[strlen(name)-1] = '\0';
 
-    // Set room
     memset(room, 0, 5);
-    memcpy(room, argv[2], strlen(argv[2]));
-    room[strlen(argv[2])] = '\0';
+    if (argc >= 3) {
+        memcpy(room, argv[2], strlen(argv[2]));
+        room[strlen(argv[2])] = '\0';
+    } else {
+        // No room specified, leave empty to request room list
+        room[0] = '\0';
+    }
 
     // Set up server address structure
     struct sockaddr_in serv_addr;
@@ -107,11 +111,57 @@ int main(int argc, char *argv[]){
     n = send(sockfd, room, 5, 0);
     if(n < 0) error("ERROR send()ing room");
 
+    // If room is empty server will send available rooms
+    if (strlen(room) == 0) {
+        char room_list[512];
+        memset(room_list, 0, 512);
+        
+        n = recv(sockfd, room_list, 511, 0);
+        if (n < 0) error("ERROR recv()ing room list");
+        room_list[n] = '\0';
+        
+        printf("%s", room_list);
+        
+        // Check if no rooms available
+        if (strstr(room_list, "No rooms available") != NULL) {
+            strcpy(room, "new");
+            
+            n = send(sockfd, room, strlen(room), 0);
+            if (n < 0) error("ERROR send()ing room choice");
+            
+            // Receive room number
+            char room_msg[50];
+            n = recv(sockfd, room_msg, 49, 0);
+            if (n < 0) error("ERROR recv()ing room message");
+            room_msg[n] = '\0';
+            printf("%s", room_msg);
+        } else {
+            printf("Choose the room number or type [new] to create a new room: ");
+            char room_choice[10];
+            memset(room_choice, 0, 10);
+            fgets(room_choice, 9, stdin);
+            room_choice[strlen(room_choice)-1] = '\0';
+            
+            // Send room to server
+            n = send(sockfd, room_choice, strlen(room_choice), 0);
+            if (n < 0) error("ERROR send()ing room choice");
+            
+            // If new room, receive room number
+            if (strcmp(room_choice, "new") == 0) {
+                char room_msg[50];
+                n = recv(sockfd, room_msg, 49, 0);
+                if (n < 0) error("ERROR recv()ing room message");
+                room_msg[n] = '\0';
+                printf("%s", room_msg);
+            }
+        }
+    }
+    
     // If room not valid, error and exit
     char valid_msg;
     n = recv(sockfd, &valid_msg, 1, 0);
-    if(n < 0) error("ERROR recv()ing room validity");
-    if(valid_msg == 'i') error("ERROR: room does not exist or not open");
+    if (n < 0) error("ERROR recv()ing room validity");
+    if (valid_msg == 'i') error("ERROR: room does not exist or not open");
 
     pthread_t tid1;
 	pthread_t tid2;
@@ -130,7 +180,6 @@ int main(int argc, char *argv[]){
 	pthread_join(tid1, NULL);
 
 	close(sockfd);
-
 
     return 0;
 }

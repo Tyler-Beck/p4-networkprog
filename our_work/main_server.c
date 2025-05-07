@@ -58,6 +58,28 @@ void print_list() {
 	}
 }
 
+// Function to list available rooms and their occupants
+void list_available_rooms(int sockfd) {
+    char room_list[512] = "Server says following options are available:\n";
+    char room_info[64];
+    int roomCount = 0;
+    
+    for (int i = 0; i < 10; i++) {
+        if (rooms[i] > 0) {
+            sprintf(room_info, "Room %d: %d %s\n", i+1, rooms[i], 
+                    rooms[i] == 1 ? "person" : "people");
+            strcat(room_list, room_info);
+            roomCount++;
+        }
+    }
+    
+    if (roomCount == 0) {
+        strcat(room_list, "No rooms available. Creating new room.\n");
+    }
+    
+    send(sockfd, room_list, strlen(room_list), 0);
+}
+
 void add_tail(int newclisockfd, char* name, int room)
 {
 
@@ -224,9 +246,9 @@ void* thread_main(void* args)
 				cur->next = NULL;
 				break;
 			}
-			cur->next = cur->next->next;
-			cur->next->next = NULL;
-			free(cur->next);
+			USR* temp = cur->next;
+			cur->next = temp->next;
+			free(temp);
 			break;
 		}
 		cur = cur->next;
@@ -292,7 +314,70 @@ int main(int argc, char *argv[])
 			// If all rooms are taken, communicate that to the client
 			
 			rooms[i]++;		// Indicate a client joined the room
-			room = ++i;		// Puts client in next room
+			room = i + 1;	// Puts client in next room
+			
+			// Send room number to client
+			char room_msg[64];
+			sprintf(room_msg, "Connected to server with new room number %d\n", room);
+			n = send(newsockfd, room_msg, strlen(room_msg), 0);
+			if(n < 0) error("ERROR send()ing room message");
+			
+			char valid_room = 'v';
+			n = send(newsockfd, &valid_room, 1, 0);
+			if(n < 0) error("ERROR send()ing room validity");
+
+		} else if (strlen(in_room) == 0) {
+
+			list_available_rooms(newsockfd);
+			
+			// Receive room from client
+			char room_choice[10];
+			memset(room_choice, 0, 10);
+			n = recv(newsockfd, room_choice, 9, 0);
+			if (n < 0) error("ERROR recv()ing room choice");
+			room_choice[n] = '\0';
+			
+			if (strcmp(room_choice, "new") == 0) {
+				// Create new room
+				int i;
+				for (i = 0; i < 10; i++) {
+					if (rooms[i] == 0)
+						break;
+				}
+				rooms[i]++;
+				room = i + 1;
+				
+				// Notify client of room number
+				char room_msg[64];
+				sprintf(room_msg, "Connected to server with new room number %d\n", room);
+				n = send(newsockfd, room_msg, strlen(room_msg), 0);
+				if(n < 0) error("ERROR send()ing room message");
+				
+				char valid_room = 'v';
+				n = send(newsockfd, &valid_room, 1, 0);
+				if(n < 0) error("ERROR send()ing room validity");
+			} 
+			else {
+				// User selected existing room
+				room = atoi(room_choice);
+				
+				// Validate room choice
+				char valid_room;
+				if (room > 10 || room < 1 || rooms[room-1] == 0) {
+					valid_room = 'i';
+					int n = send(newsockfd, &valid_room, 1, 0);
+					if (n < 0) error("ERROR send()ing room validity");
+					
+					close(newsockfd);
+					continue;
+				} 
+				else {
+					valid_room = 'v';
+					int n = send(newsockfd, &valid_room, 1, 0);
+					if (n < 0) error("ERROR send()ing room validity");
+					rooms[room-1]++;
+				}
+			}
 		}
 		else {
 			room = atoi(in_room);
@@ -311,8 +396,8 @@ int main(int argc, char *argv[])
 				valid_room = 'v';
 				int n = send(newsockfd, &valid_room, 1, 0);
 				if(n < 0) error("ERROR send()ing room validity");
+				rooms[room-1]++;
 			}
-			rooms[room-1]++;
 		}
 
 		add_tail(newsockfd, name, room); // add this new client to the client list
