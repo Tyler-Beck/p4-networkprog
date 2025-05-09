@@ -61,7 +61,10 @@ void* thread_send(void* args){
         n = send(sockfd, buffer, strlen(buffer), 0);
         if(n < 0) error("ERROR writing to socket");
 
-        if(strlen(buffer)==0) break;
+        if(strlen(buffer)==0){
+            shutdown(sockfd, SHUT_WR);
+            break;
+        }
     }
 
     pthread_exit(0);
@@ -212,7 +215,7 @@ int main(int argc, char *argv[]){
 
 	// parent will wait for sender to finish (= user stop sending message and disconnect from server)
 	pthread_join(tid1, NULL);
-
+    pthread_join(tid2, NULL);
 	close(sockfd);
 
     return 0;

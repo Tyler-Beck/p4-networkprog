@@ -221,7 +221,9 @@ void* thread_main(void* args)
 	memset(buffer, 0, 256);
 
 	nrcv = recv(clisockfd, buffer, 255, 0);
-	if (nrcv < 0) error("ERROR recv() failed");
+	if (nrcv < 0) {
+		error("ERROR recv() failed!!!");
+	}
 	buffer[nrcv] = '\0';
 
 	while (nrcv > 0) {
@@ -230,7 +232,7 @@ void* thread_main(void* args)
 
 		memset(buffer, 0, 256);
 		nrcv = recv(clisockfd, buffer, 255, 0);
-		if (nrcv < 0) error("ERROR recv() failed");
+		if (nrcv < 0) error("ERROR recv() failing");
 		buffer[nrcv] = '\0';
 	}
 
