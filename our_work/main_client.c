@@ -26,19 +26,20 @@ void* thread_recv(void* args){
     int sockfd = ((thread_args*) args)->clisockfd;
     free(args);
 
-    char buffer[512];
+    char buffer[513];
     int n;
 
+    memset(buffer, 0, 513);
     n = recv(sockfd, buffer, 512, 0);
     buffer[n] = '\0';
     while(n>0) {
         printf("%s\n", buffer);
-        memset(buffer, 0, 512);
+        memset(buffer, 0, 513);
         n = recv(sockfd, buffer, 512, 0);
         if(n<0) error("ERROR: reading from socket");
         buffer[n] = '\0';
     }
-    return NULL;
+    pthread_exit(0);
 }
 
 void* thread_send(void* args){
@@ -62,7 +63,8 @@ void* thread_send(void* args){
 
         if(strlen(buffer)==0) break;
     }
-    return NULL;
+
+    pthread_exit(0);
 }
 
 int main(int argc, char *argv[]){
@@ -113,10 +115,10 @@ int main(int argc, char *argv[]){
 
     // If room is empty server will send available rooms
     if (strlen(room) == 0) {
-        char room_list[512];
-        memset(room_list, 0, 512);
+        char room_list[513];
+        memset(room_list, 0, 513);
         
-        n = recv(sockfd, room_list, 511, 0);
+        n = recv(sockfd, room_list, 512, 0);
         if (n < 0) error("ERROR recv()ing room list");
         room_list[n] = '\0';
         
@@ -126,42 +128,74 @@ int main(int argc, char *argv[]){
         if (strstr(room_list, "No rooms available") != NULL) {
             strcpy(room, "new");
             
-            n = send(sockfd, room, strlen(room), 0);
+            n = send(sockfd, room, 5, 0);
             if (n < 0) error("ERROR send()ing room choice");
             
+            // If room not valid, error and exit
+            char valid_msg;
+            n = recv(sockfd, &valid_msg, 1, 0);
+            if (n < 0) error("ERROR recv()ing room validity");
+            if (valid_msg == 'i') {
+                close(sockfd);
+                error("ERROR: room does not exist or not open");
+            }
+
             // Receive room number
-            char room_msg[50];
-            n = recv(sockfd, room_msg, 49, 0);
+            char room_msg[65];
+            memset(room_msg, 0, 65);
+            n = recv(sockfd, room_msg, 64, 0);
             if (n < 0) error("ERROR recv()ing room message");
             room_msg[n] = '\0';
             printf("%s", room_msg);
         } else {
             printf("Choose the room number or type [new] to create a new room: ");
-            char room_choice[10];
-            memset(room_choice, 0, 10);
-            fgets(room_choice, 9, stdin);
+            char room_choice[5];
+            memset(room_choice, 0, 5);
+            fgets(room_choice, 5, stdin);
             room_choice[strlen(room_choice)-1] = '\0';
             
             // Send room to server
-            n = send(sockfd, room_choice, strlen(room_choice), 0);
+            n = send(sockfd, room_choice, 5, 0);
             if (n < 0) error("ERROR send()ing room choice");
             
             // If new room, receive room number
             if (strcmp(room_choice, "new") == 0) {
-                char room_msg[50];
-                n = recv(sockfd, room_msg, 49, 0);
+                // If room not valid, error and exit
+                char valid_msg;
+                n = recv(sockfd, &valid_msg, 1, 0);
+                if (n < 0) error("ERROR recv()ing room validity");
+                if (valid_msg == 'i'){
+                    close(sockfd);
+                    error("ERROR: room does not exist or not open");
+                }
+
+                char room_msg[65];
+                memset(room_msg, 0, 65);
+                n = recv(sockfd, room_msg, 64, 0);
                 if (n < 0) error("ERROR recv()ing room message");
                 room_msg[n] = '\0';
                 printf("%s", room_msg);
             }
         }
     }
-    
-    // If room not valid, error and exit
-    char valid_msg;
-    n = recv(sockfd, &valid_msg, 1, 0);
-    if (n < 0) error("ERROR recv()ing room validity");
-    if (valid_msg == 'i') error("ERROR: room does not exist or not open");
+    else {
+        // If room not valid, error and exit
+        char valid_msg;
+        n = recv(sockfd, &valid_msg, 1, 0);
+        if (n < 0) error("ERROR recv()ing room validity");
+        if (valid_msg == 'i') {
+            close(sockfd);
+            error("ERROR: room does not exist or not open");
+        }
+
+        // Receive room message
+        char room_msg[65];
+        memset(room_msg, 0, 65);
+        n = recv(sockfd, room_msg, 64, 0);
+        if (n < 0) error("ERROR recv()ing room message");
+        room_msg[n] = '\0';
+        printf("%s", room_msg);
+    }
 
     pthread_t tid1;
 	pthread_t tid2;

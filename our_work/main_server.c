@@ -44,6 +44,8 @@ typedef struct _USR {
 USR *head = NULL;
 USR *tail = NULL;
 
+pthread_mutex_t mutex;
+
 void print_list() {
 	printf("\n-----Connected clients-----\n");
 	USR* cur = head;
@@ -76,8 +78,9 @@ void list_available_rooms(int sockfd) {
     if (roomCount == 0) {
         strcat(room_list, "No rooms available. Creating new room.\n");
     }
-    
-    send(sockfd, room_list, strlen(room_list), 0);
+
+    int n = send(sockfd, room_list, 512, 0);
+	if(n < 0) error("ERROR send()ing room list");
 }
 
 void add_tail(int newclisockfd, char* name, int room)
@@ -141,6 +144,8 @@ void broadcast(int fromfd, char* message, int option, int room)
 	memset(name, 0, 50);
 	int sender_color_index = 0;
 
+	pthread_mutex_lock(&mutex);
+
 	USR* cur = head;
 	while(cur != NULL) {
 		if(cur->clisockfd == fromfd) {
@@ -190,6 +195,7 @@ void broadcast(int fromfd, char* message, int option, int room)
 
 		cur = cur->next;
 	}
+	pthread_mutex_unlock(&mutex);
 }
 
 typedef struct _ThreadArgs {
@@ -231,6 +237,8 @@ void* thread_main(void* args)
 	// Handle disconnect (broadcast leaving, remove node from linked list)
 	broadcast(clisockfd, NULL, 1, room);
 
+	pthread_mutex_lock(&mutex);
+
 	USR* cur = head;
 	if(cur->clisockfd == clisockfd) {
 		head = cur->next;
@@ -254,16 +262,20 @@ void* thread_main(void* args)
 		cur = cur->next;
 	}
 
+	pthread_mutex_unlock(&mutex);
+
 	print_list(); // Print all connected clients
 	close(clisockfd);
 	//-------------------------------
 	rooms[room-1]--;
 
-	return NULL;
+	pthread_exit(0);
 }
 
 int main(int argc, char *argv[])
 {
+	pthread_mutex_init(&mutex, NULL);
+
 	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd < 0) error("ERROR opening socket");
 
@@ -271,8 +283,7 @@ int main(int argc, char *argv[])
 	socklen_t slen = sizeof(serv_addr);
 	memset((char*) &serv_addr, 0, sizeof(serv_addr));
 	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_addr.s_addr = INADDR_ANY;	
-	//serv_addr.sin_addr.s_addr = inet_addr("192.168.1.171");	
+	serv_addr.sin_addr.s_addr = INADDR_ANY;
 	serv_addr.sin_port = htons(PORT_NUM);
 	srand(time(NULL));
 
@@ -315,25 +326,27 @@ int main(int argc, char *argv[])
 			
 			rooms[i]++;		// Indicate a client joined the room
 			room = i + 1;	// Puts client in next room
-			
-			// Send room number to client
-			char room_msg[64];
-			sprintf(room_msg, "Connected to server with new room number %d\n", room);
-			n = send(newsockfd, room_msg, strlen(room_msg), 0);
-			if(n < 0) error("ERROR send()ing room message");
-			
+
+			// Validate room
 			char valid_room = 'v';
 			n = send(newsockfd, &valid_room, 1, 0);
 			if(n < 0) error("ERROR send()ing room validity");
+			
+			// Send room number to client
+			char room_msg[64];
+			memset(room_msg, 0, 64);
+			sprintf(room_msg, "Connected to server with new room number %d\n", room);
+			n = send(newsockfd, room_msg, 64, 0);
+			if(n < 0) error("ERROR send()ing room message");
 
 		} else if (strlen(in_room) == 0) {
 
 			list_available_rooms(newsockfd);
 			
 			// Receive room from client
-			char room_choice[10];
-			memset(room_choice, 0, 10);
-			n = recv(newsockfd, room_choice, 9, 0);
+			char room_choice[6];
+			memset(room_choice, 0, 6);
+			n = recv(newsockfd, room_choice, 5, 0);
 			if (n < 0) error("ERROR recv()ing room choice");
 			room_choice[n] = '\0';
 			
@@ -346,21 +359,23 @@ int main(int argc, char *argv[])
 				}
 				rooms[i]++;
 				room = i + 1;
-				
-				// Notify client of room number
-				char room_msg[64];
-				sprintf(room_msg, "Connected to server with new room number %d\n", room);
-				n = send(newsockfd, room_msg, strlen(room_msg), 0);
-				if(n < 0) error("ERROR send()ing room message");
-				
+
+				// Validate room
 				char valid_room = 'v';
 				n = send(newsockfd, &valid_room, 1, 0);
 				if(n < 0) error("ERROR send()ing room validity");
+				
+				// Notify client of room number
+				char room_msg[64];
+				memset(room_msg, 0, 64);
+				sprintf(room_msg, "Connected to server with new room number %d\n", room);
+				n = send(newsockfd, room_msg, 64, 0);
+				if(n < 0) error("ERROR send()ing room message");
 			} 
 			else {
 				// User selected existing room
 				room = atoi(room_choice);
-				
+
 				// Validate room choice
 				char valid_room;
 				if (room > 10 || room < 1 || rooms[room-1] == 0) {
@@ -377,6 +392,13 @@ int main(int argc, char *argv[])
 					if (n < 0) error("ERROR send()ing room validity");
 					rooms[room-1]++;
 				}
+
+				// Send room message
+				char room_msg[64];
+				memset(room_msg, 0, 64);
+				sprintf(room_msg, "Connected to server with new room number %d\n", room);
+				n = send(newsockfd, room_msg, 64, 0);
+				if(n < 0) error("ERROR send()ing room message");
 			}
 		}
 		else {
@@ -398,6 +420,13 @@ int main(int argc, char *argv[])
 				if(n < 0) error("ERROR send()ing room validity");
 				rooms[room-1]++;
 			}
+
+			// Send message
+			char room_msg[64];
+			memset(room_msg, 0, 64);
+			sprintf(room_msg, "Connected to server with new room number %d\n", room);
+			n = send(newsockfd, room_msg, 64, 0);
+			if(n < 0) error("ERROR send()ing room message");
 		}
 
 		add_tail(newsockfd, name, room); // add this new client to the client list
@@ -415,5 +444,6 @@ int main(int argc, char *argv[])
 		if (pthread_create(&tid, NULL, thread_main, (void*) args) != 0) error("ERROR creating a new thread");
 	}
 
+	pthread_mutex_destroy(&mutex);
 	return 0; 
 }
