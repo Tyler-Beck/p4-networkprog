@@ -68,7 +68,7 @@ void list_available_rooms(int sockfd) {
     
     for (int i = 0; i < 10; i++) {
         if (rooms[i] > 0) {
-            sprintf(room_info, "Room %d: %d %s\n", i+1, rooms[i], 
+            sprintf(room_info, "\tRoom %d: %d %s\n", i+1, rooms[i], 
                     rooms[i] == 1 ? "person" : "people");
             strcat(room_list, room_info);
             roomCount++;

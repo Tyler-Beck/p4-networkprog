@@ -161,24 +161,21 @@ int main(int argc, char *argv[]){
             n = send(sockfd, room_choice, 5, 0);
             if (n < 0) error("ERROR send()ing room choice");
             
-            // If new room, receive room number
-            if (strcmp(room_choice, "new") == 0) {
-                // If room not valid, error and exit
-                char valid_msg;
-                n = recv(sockfd, &valid_msg, 1, 0);
-                if (n < 0) error("ERROR recv()ing room validity");
-                if (valid_msg == 'i'){
-                    close(sockfd);
-                    error("ERROR: room does not exist or not open");
-                }
-
-                char room_msg[65];
-                memset(room_msg, 0, 65);
-                n = recv(sockfd, room_msg, 64, 0);
-                if (n < 0) error("ERROR recv()ing room message");
-                room_msg[n] = '\0';
-                printf("%s", room_msg);
+            // If room not valid, error and exit
+            char valid_msg;
+            n = recv(sockfd, &valid_msg, 1, 0);
+            if (n < 0) error("ERROR recv()ing room validity");
+            if (valid_msg == 'i'){
+                close(sockfd);
+                error("ERROR: room does not exist or not open");
             }
+
+            char room_msg[65];
+            memset(room_msg, 0, 65);
+            n = recv(sockfd, room_msg, 64, 0);
+            if (n < 0) error("ERROR recv()ing room message");
+            room_msg[n] = '\0';
+            printf("%s", room_msg);
         }
     }
     else {
